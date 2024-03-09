@@ -31,7 +31,7 @@ export default function Home() {
               rel="noreferrer"
               className={cn(
                 buttonVariants({ variant: "outline", size: "lg" }),
-                "w-full sm:w-fit"
+                "w-full sm:w-fit",
               )}
             >
               GitHub

@@ -24,7 +24,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
 
   const displayPosts = sortedPosts.slice(
     POSTS_PER_PAGE * (currentPage - 1),
-    POSTS_PER_PAGE * currentPage
+    POSTS_PER_PAGE * currentPage,
   );
 
   return (
