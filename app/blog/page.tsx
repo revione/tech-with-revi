@@ -1,31 +1,31 @@
-import { posts } from "#site/content";
-import { PostItem } from "@/components/post-item";
-import { QueryPagination } from "@/components/query-pagination";
-import { sortPosts } from "@/lib/utils";
-import { Metadata } from "next";
+import { posts } from "#site/content"
+import { PostItem } from "@/components/post-item"
+import { QueryPagination } from "@/components/query-pagination"
+import { sortPosts } from "@/lib/utils"
+import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "My blog",
-  description: "This is a description",
-};
+  title: "Revi's Awesome Blog",
+  description: "Explore the world of tech, creativity, and life with Revi.",
+}
 
-const POSTS_PER_PAGE = 5;
+const POSTS_PER_PAGE = 5
 
 interface BlogPageProps {
   searchParams: {
-    page?: string;
-  };
+    page?: string
+  }
 }
 
 export default async function BlogPage({ searchParams }: BlogPageProps) {
-  const currentPage = Number(searchParams?.page) || 1;
-  const sortedPosts = sortPosts(posts.filter((post) => post.published));
-  const totalPages = Math.ceil(sortedPosts.length / POSTS_PER_PAGE);
+  const currentPage = Number(searchParams?.page) || 1
+  const sortedPosts = sortPosts(posts.filter((post) => post.published))
+  const totalPages = Math.ceil(sortedPosts.length / POSTS_PER_PAGE)
 
   const displayPosts = sortedPosts.slice(
     POSTS_PER_PAGE * (currentPage - 1),
-    POSTS_PER_PAGE * currentPage,
-  );
+    POSTS_PER_PAGE * currentPage
+  )
 
   return (
     <div className="container max-w-4xl py-6 lg:py-10">
@@ -33,7 +33,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
         <div className="flex-1 space-y-4">
           <h1 className="inline-block font-black text-4xl lg:text-5xl">Blog</h1>
           <p className="text-xl text-muted-foreground">
-            My ramblings on all things web dev.
+            Compositions that accompany me in my day-to-day life.
           </p>
         </div>
       </div>
@@ -41,7 +41,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       {displayPosts?.length > 0 ? (
         <ul className="flex flex-col">
           {displayPosts.map((post) => {
-            const { slug, date, title, description } = post;
+            const { slug, date, title, description } = post
             return (
               <li key={slug}>
                 <PostItem
@@ -51,7 +51,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
                   description={description}
                 />
               </li>
-            );
+            )
           })}
         </ul>
       ) : (
@@ -59,5 +59,5 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       )}
       <QueryPagination totalPages={totalPages} className="justify-end mt-4" />
     </div>
-  );
+  )
 }

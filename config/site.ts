@@ -1,13 +1,9 @@
 export const siteConfig = {
-  name: "Rev Dev",
-  url: "https://example.com",
-  description: "Nextjs 14 blog using velite, tailwind and shadcn",
-  author: "JollyCoding",
-  links: {
-    twitter: "https://twitter.com/jollyshopland",
-    github: "https://github.com/jolbol1",
-    personalSite: "https://jamesshopland.com",
-  },
-};
+  name: "Revi's Blog",
+  url: "https://revi-blog.rev.earth",
+  description:
+    "Revi's blog covers a wide range of topics, discussing everything from tech and creativity to life and beyond.",
+  author: "Revi",
+}
 
-export type SiteConfig = typeof siteConfig;
+export type SiteConfig = typeof siteConfig

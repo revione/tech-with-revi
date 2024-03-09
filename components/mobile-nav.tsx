@@ -1,16 +1,16 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
-import { Button } from "./ui/button";
-import { Menu } from "lucide-react";
-import Link, { LinkProps } from "next/link";
-import { useRouter } from "next/navigation";
-import { Icons } from "./icons";
-import { siteConfig } from "@/config/site";
+import { useState } from "react"
+import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet"
+import { Button } from "./ui/button"
+import { Menu } from "lucide-react"
+import Link, { LinkProps } from "next/link"
+import { useRouter } from "next/navigation"
+import { Icons } from "./icons"
+import { siteConfig } from "@/config/site"
 
 export function MobileNav() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false)
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -36,26 +36,16 @@ export function MobileNav() {
           <MobileLink onOpenChange={setOpen} href="/about">
             About
           </MobileLink>
-          <Link target="_blank" rel="noreferrer" href={siteConfig.links.github}>
-            GitHub
-          </Link>
-          <Link
-            target="_blank"
-            rel="noreferrer"
-            href={siteConfig.links.twitter}
-          >
-            Twitter
-          </Link>
         </div>
       </SheetContent>
     </Sheet>
-  );
+  )
 }
 
 interface MobileLinkProps extends LinkProps {
-  children: React.ReactNode;
-  onOpenChange?: (open: boolean) => void;
-  className?: string;
+  children: React.ReactNode
+  onOpenChange?: (open: boolean) => void
+  className?: string
 }
 
 function MobileLink({
@@ -65,18 +55,18 @@ function MobileLink({
   className,
   ...props
 }: MobileLinkProps) {
-  const router = useRouter();
+  const router = useRouter()
   return (
     <Link
       href={href}
       onClick={() => {
-        router.push(href.toString());
-        onOpenChange?.(false);
+        router.push(href.toString())
+        onOpenChange?.(false)
       }}
       className={className}
       {...props}
     >
       {children}
     </Link>
-  );
+  )
 }
