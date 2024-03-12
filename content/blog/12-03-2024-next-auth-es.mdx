@@ -1,0 +1,624 @@
+---
+title: "Next.js 14 + Next-Auth (Spanish version)"
+description: "Iremos sumergiéndonos en los diferentes documentos que conforman una autorización y autenticación en una aplicación de Next.js 14 con Next-Auth."
+date: 2024-03-12
+published: true
+---
+
+Vamos a hablar de cómo hacer una integración con Next.js y next-auth en conjunto con un par de librerías más que nos ayudarán con el manejo de datos y asegurarnos de guardar adecuadamente las contraseñas. Este post es solo de manera educativa y su propósito es mostrar una de las posibles implementaciones.
+
+Aquí está la dirección del proyecto para que lo veas si así quieres.
+https://github.com/revione/sample-nextjs-auth
+
+El proyecto deployado para probarlo esta en 
+https://sample-nextjs-auth.rev.earth
+
+Entonces comencemos...
+
+## Dependencias
+
+Primero, instalamos las dependencias. `npm install` o `pnpm install`
+
+## Environment Variables
+
+Before running the application, make sure to create a .env.local file based on the provided .env.local.example. You must provide your own AUTH_SECRET value, which is required by Next-Auth for secure authentication.
+
+Here's an example .env.local file:
+
+```plaintext
+# prisma locations database
+DATABASE_URL="file:./db/dev.db"
+
+# Auth secret required for next-auth
+AUTH_SECRET=your_auth_secret_here
+```
+
+Replace your_auth_secret_here with your own secret key. This ensures secure authentication for your Next.js application.
+
+## Prisma
+
+Con Prisma podemos hacer cosas geniales y grandiosas. Podemos hacer una migración con `prisma migrate dev --name init`.
+
+También podemos visualizar nuestra base de datos con Prisma Studio con `prisma studio`.
+
+Vamos a trabajar en este caso con Prisma con SQLite, así podemos probar los datos sin tener que levantar una base de datos.
+
+## auth.ts
+
+La exportación de authConfig proporciona una configuración específica para la autenticación, que puede ser reutilizada en el middleware de nextjs.
+
+Se exportan los auth, signIn y signOut utilizando la sintaxis de desestructuración de objetos. Estos elementos están siendo extraídos de lo que devuelve NextAuth y se exportan individualmente para que puedan ser utilizados en otros módulos.
+
+```ts /authConfig/ / auth, signIn, signOut /
+import NextAuth from "next-auth"
+import type { NextAuthConfig, User } from "next-auth"
+import Credentials from "next-auth/providers/credentials"
+import { compare } from "bcrypt-ts"
+import { userManager } from "@/prisma/user-manager"
+
+export const authConfig: NextAuthConfig = {
+  pages: {
+    signIn: "/login",
+  },
+  providers: [],
+  callbacks: {
+    authorized({ auth, request: { nextUrl } }) {
+      let isLoggedIn = !!auth?.user
+      let isProtected = nextUrl.pathname.startsWith("/protected")
+
+      if (isProtected) {
+        if (isLoggedIn) return true
+        return false // Redirect unauthenticated users to login page
+      } else if (isLoggedIn) {
+        return Response.redirect(new URL("/protected", nextUrl))
+      }
+
+      return true
+    },
+  },
+}
+
+export const { auth, signIn, signOut } = NextAuth({
+  ...authConfig,
+  providers: [
+    Credentials({
+      async authorize(credentials) {
+        const { email, password } = credentials as {
+          email: string
+          password: string
+        }
+
+        const user = await userManager.findByEmail(email)
+        if (!user) return null
+        const passwordsMatch = await compare(password, user.password)
+        if (passwordsMatch)
+          return { id: user.id, name: user.name, email: user.email }
+
+        return null
+      },
+    }),
+  ],
+})
+```
+
+## middleware.ts
+
+Aquí estamos importando authConfig que hemos definido anteriormente y será el que se encargue de procesar la autorización antes de que se renderice la página autorizada.
+
+```ts
+import NextAuth from "next-auth"
+import { authConfig } from "@/auth"
+
+export default NextAuth(authConfig).auth
+
+export const config = {
+  // https://nextjs.org/docs/app/building-your-application/routing/middleware#matcher
+  matcher: ["/((?!api|_next/static|_next/image|.*\\.png$).*)"],
+}
+```
+
+## Actions
+
+Lo más importante es tener en cuenta que las acciones se manejan en el servidor y ya que esto es así, entonces separaremos las acciones en archivos diferentes para que podamos acceder a ellas desde los archivos del cliente sin que tengamos errores de proceso.
+
+#### ./app/actions/authenticate.ts
+
+Aquí lo importante es ver que estamos importando la función `signIn`, la cual nos permite hacer la autenticación de la aplicación. También, en el momento en que este proyecto se publica, Next.js tiene un problema relacionado con la redirección dentro del bloque `try catch`. Debido a esto, verificamos con `isRedirectError` si es un error de redirección y con esto ya sabemos que el proceso ha sido exitoso y que podemos redirigir al usuario a la página correspondiente.
+
+```ts
+"use server"
+
+import { signIn } from "@/auth"
+import { AuthError } from "next-auth"
+import {
+  RedirectType,
+  isRedirectError,
+} from "next/dist/client/components/redirect"
+import { redirect } from "next/navigation"
+
+export async function authenticate(
+  prevState:
+    | {
+        success: boolean
+        message: string
+      }
+    | undefined,
+  formData: FormData
+) {
+  try {
+  } catch (error) {
+    let message = "Something went wrong."
+
+    if (isRedirectError(error)) redirect("/protected", RedirectType.replace)
+
+    if (error instanceof AuthError) {
+      switch (error.type) {
+        case "CredentialsSignin":
+          message = "Invalid credentials."
+          break
+        default:
+          message = "Something went wrong."
+      }
+    }
+
+    return {
+      success: false,
+      message,
+    }
+  }
+}
+```
+
+#### ./app/actions/register.ts
+
+Aquí vamos a crear el usuario en nuestra base de datos y vamos a asegurarnos de que la contraseña se guarde de manera segura como hash.
+
+```ts
+"use server"
+
+import { userManager } from "@/prisma/user-manager"
+import { genSaltSync, hashSync } from "bcrypt-ts"
+
+export async function register(
+  prevState:
+    | {
+        success: boolean
+        message: string
+      }
+    | undefined,
+  formData: FormData
+) {
+  try {
+    let name = formData.get("name") as string
+    let email = formData.get("email") as string
+    let password = formData.get("password") as string
+
+    const existingUser = await userManager.findByEmail(email)
+
+    if (existingUser) {
+      return {
+        success: false,
+        message: "User already exists.",
+      }
+    } else {
+      let salt = genSaltSync(10)
+      let hash = hashSync(password, salt)
+      await userManager.create({ email, name, password: hash })
+
+      return {
+        success: true,
+        message: "Registration successful.",
+      }
+    }
+  } catch (error) {
+    console.error("Error during registration:", error)
+    return {
+      success: false,
+      message: "Something went wrong.",
+    }
+  }
+}
+```
+
+#### ./app/actions/reset-password.ts
+
+Este es un componente de muestra que nos permitirá restablecer la contraseña. En producción, necesitará más pasos para que sea seguro, pero por ahora es solo con fines de aprendizaje.
+
+```ts
+"use server"
+
+import { userManager } from "@/prisma/user-manager"
+import { genSaltSync, hashSync } from "bcrypt-ts"
+
+export async function resetPassword(
+  prevState:
+    | {
+        success: boolean
+        message: string
+      }
+    | undefined,
+  formData: FormData
+) {
+  try {
+    let email = formData.get("email") as string
+    const existingUser = await userManager.findByEmail(email)
+    if (!existingUser)
+      return {
+        success: false,
+        message: "User does not exist",
+      }
+
+    let password = formData.get("password") as string
+    let salt = genSaltSync(10)
+    let hash = hashSync(password, salt)
+    await userManager.update(existingUser.id, { password: hash })
+
+    return {
+      success: true,
+      message: "Password reset successful.",
+    }
+  } catch (error) {
+    console.error("Error during password reset:", error)
+    return {
+      success: false,
+      message: "Something went wrong.",
+    }
+  }
+}
+```
+
+## Páginas
+
+#### ./app/login/page.tsx
+
+Aquí tenemos el formulario que usaremos para hacer el login en la aplicación con la muestra de mensajes de error o success dependiendo del estado de la respuesta de la acción.
+
+```tsx
+"use client"
+
+import Link from "next/link"
+import { useFormState } from "react-dom"
+import { authenticate } from "@/app/actions/authenticate"
+import { SubmitButton } from "@/app/ui/SubmitButton"
+
+export default function LoginForm() {
+  const [info, dispatch] = useFormState(authenticate, undefined)
+
+  return (
+    <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
+      <div className="z-10 w-full max-w-md overflow-hidden rounded-2xl border border-gray-100 shadow-xl">
+        <div className="flex flex-col items-center justify-center space-y-3 border-b border-gray-200 bg-white px-4 py-6 pt-8 text-center sm:px-16">
+          <h3 className="text-xl font-semibold">Sign In</h3>
+          <p className="text-sm text-gray-500">
+            Use your email and password to sign in
+          </p>
+        </div>
+
+        {typeof info?.success === "boolean" && (
+          <div
+            className="flex h-8 items-end space-x-1 justify-center"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <p
+              className={`text-sm  ${
+                info?.success ? "text-green-500" : "text-red-500"
+              }`}
+            >
+              {info?.message}
+            </p>
+          </div>
+        )}
+        <form
+          action={dispatch}
+          className="flex flex-col space-y-4 bg-gray-50 px-4 py-8 sm:px-16"
+        >
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Email Address
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="user@acme.com"
+              autoComplete="email"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="*********"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+
+          <SubmitButton>Log in</SubmitButton>
+        </form>
+        <div className="flex flex-col gap-3 mb-8 text-center text-sm text-gray-600">
+          <p>
+            {"Don't have an account? "}
+            <Link href="/register" className="font-semibold text-gray-800">
+              Sign up
+            </Link>
+            {" for free."}
+          </p>
+
+          <p>
+            {"Don't remember the passwordt? "}
+            <Link
+              href="/reset-password"
+              className="font-semibold text-gray-800"
+            >
+              Reset password
+            </Link>.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+#### ./app/register/page.tsx
+
+Aquí tenemos el formulario de registro, importante para que podamos comenzar a probar la aplicación.
+
+```tsx
+"use client"
+
+import Link from "next/link"
+import { useFormState } from "react-dom"
+import { register } from "@/app/actions/register"
+import { SubmitButton } from "@/app/ui/SubmitButton"
+
+export default function LoginForm() {
+  const [info, dispatch] = useFormState(register, undefined)
+
+  return (
+    <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
+      <div className="z-10 w-full max-w-md overflow-hidden rounded-2xl border border-gray-100 shadow-xl">
+        <div className="flex flex-col items-center justify-center space-y-3 border-b border-gray-200 bg-white px-4 py-6 pt-8 text-center sm:px-16">
+          <h3 className="text-xl font-semibold">Sign up</h3>
+          <p className="text-sm text-gray-500">
+            Create your account by providing your name, email and creating a
+            password.
+          </p>
+        </div>
+
+        {typeof info?.success === "boolean" && (
+          <div
+            className="flex h-8 items-end space-x-1 justify-center"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <p
+              className={`text-sm  ${
+                info?.success ? "text-green-500" : "text-red-500"
+              }`}
+            >
+              {info?.message}
+            </p>
+          </div>
+        )}
+
+        <form
+          action={dispatch}
+          className="flex flex-col space-y-4 bg-gray-50 px-4 py-8 sm:px-16"
+        >
+          <div>
+            <label
+              htmlFor="name"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Name
+            </label>
+            <input
+              id="name"
+              name="name"
+              type="text"
+              placeholder="Jemand"
+              autoComplete="name"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Email Address
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="user@acme.com"
+              autoComplete="email"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="*********"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+
+          <SubmitButton>Create account</SubmitButton>
+        </form>
+
+        <div className="flex flex-col gap-3 mb-8 text-center text-sm text-gray-600">
+          <p>
+            {"Do you have an account? "}
+            <Link href="/login" className="font-semibold text-gray-800">
+              Log in
+            </Link>.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+#### ./app/reset-password/page.tsx
+
+Y aquí, claro, tenemos nuestro formulario para que podamos restablecer la contraseña.
+
+```tsx
+"use client"
+
+import Link from "next/link"
+import { useFormState } from "react-dom"
+import { resetPassword } from "@/app/actions/reset-password"
+import { SubmitButton } from "@/app/ui/SubmitButton"
+
+export default function ResetPassword() {
+  const [info, dispatch] = useFormState(resetPassword, undefined)
+
+  return (
+    <div className="flex h-screen w-screen items-center justify-center bg-gray-50">
+      <div className="z-10 w-full max-w-md overflow-hidden rounded-2xl border border-gray-100 shadow-xl">
+        <div className="flex flex-col items-center justify-center space-y-3 border-b border-gray-200 bg-white px-4 py-6 pt-8 text-center sm:px-16">
+          <h3 className="text-xl font-semibold">Reset password</h3>
+          <p className="text-sm text-gray-500">
+            Reset your password by providing your email and creating a new
+            password.
+          </p>
+        </div>
+
+        {typeof info?.success === "boolean" && (
+          <div
+            className="flex h-8 items-end space-x-1 justify-center"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <p
+              className={`text-sm  ${
+                info?.success ? "text-green-500" : "text-red-500"
+              }`}
+            >
+              {info?.message}
+            </p>
+          </div>
+        )}
+
+        <form
+          action={dispatch}
+          className="flex flex-col space-y-4 bg-gray-50 px-4 py-8 sm:px-16 mb-4"
+        >
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Email Address
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="user@acme.com"
+              autoComplete="email"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-xs text-gray-600 uppercase"
+            >
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              placeholder="*********"
+              required
+              className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
+            />
+          </div>
+
+          <SubmitButton>Reset password</SubmitButton>
+        </form>
+
+        <div className="flex flex-col gap-3 mb-8 text-center text-sm text-gray-600">
+          <p>
+            {"Do you have an account? "}
+            <Link href="/login" className="font-semibold text-gray-800">
+              Log in
+            </Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+#### ./app/protected/page.tsx
+
+Aquí es nuestra página protegida, es donde accederemos a la sesión para que nos dé el email del usuario. Y de paso, tenemos una acción del servidor para cerrar la sesión.
+
+```tsx
+import { auth, signOut } from "@/auth"
+
+export default async function ProtectedPage() {
+  let session = await auth()
+
+  return (
+    <div className="flex h-screen bg-black">
+      <div className="w-screen h-screen flex flex-col space-y-5 justify-center items-center text-white">
+        You are logged in as {session?.user?.email}
+        <SignOut />
+      </div>
+    </div>
+  )
+}
+
+function SignOut() {
+  return (
+    <form
+      action={async () => {
+        "use server"
+        await signOut()
+      }}
+    >
+      <button type="submit">Sign out</button>
+    </form>
+  )
+}
+```
+
+## Comentarios
+
+Espero que este post haya sido de tu agrado y que hayas aprendido algo nuevo que no sabías antes. ¡Hasta pronto!
