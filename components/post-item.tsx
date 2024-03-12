@@ -1,13 +1,13 @@
-import { Calendar } from "lucide-react";
-import Link from "next/link";
-import { buttonVariants } from "./ui/button";
-import { cn, formatDate } from "@/lib/utils";
+import { Calendar } from "lucide-react"
+import Link from "next/link"
+import { buttonVariants } from "./ui/button"
+import { cn, formatDate } from "@/lib/utils"
 
 interface PostItemProps {
-  slug: string;
-  title: string;
-  description?: string;
-  date: string;
+  slug: string
+  title: string
+  description?: string
+  date: string
 }
 
 export function PostItem({ slug, title, description, date }: PostItemProps) {
@@ -35,5 +35,5 @@ export function PostItem({ slug, title, description, date }: PostItemProps) {
         </Link>
       </div>
     </article>
-  );
+  )
 }

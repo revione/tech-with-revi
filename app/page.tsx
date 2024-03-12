@@ -7,7 +7,7 @@ import { PostItem } from "@/components/post-item"
 
 export default function Home() {
   const latestPosts = sortPosts(posts)
-    .filter((post) => post.published)
+    .filter(post => post.published)
     .slice(0, 5)
 
   return (
@@ -35,7 +35,7 @@ export default function Home() {
           Latest Posts
         </h2>
         <ul className="flex flex-col">
-          {latestPosts.map((post) => (
+          {latestPosts.map(post => (
             <li key={post.slug} className="first:border-t first:border-border">
               <PostItem
                 slug={post.slug}

@@ -5,8 +5,8 @@ import { sortPosts } from "@/lib/utils"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Revi's Awesome Blog",
-  description: "Explore the world of tech, creativity, and life with Revi.",
+  title: "Tech with Revi",
+  description: "Explore the world of tech and creativity with Revi.",
 }
 
 const POSTS_PER_PAGE = 5
@@ -19,7 +19,7 @@ interface BlogPageProps {
 
 export default async function BlogPage({ searchParams }: BlogPageProps) {
   const currentPage = Number(searchParams?.page) || 1
-  const sortedPosts = sortPosts(posts.filter((post) => post.published))
+  const sortedPosts = sortPosts(posts.filter(post => post.published))
   const totalPages = Math.ceil(sortedPosts.length / POSTS_PER_PAGE)
 
   const displayPosts = sortedPosts.slice(
@@ -40,7 +40,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       <hr className="mt-8" />
       {displayPosts?.length > 0 ? (
         <ul className="flex flex-col">
-          {displayPosts.map((post) => {
+          {displayPosts.map(post => {
             const { slug, date, title, description } = post
             return (
               <li key={slug}>
